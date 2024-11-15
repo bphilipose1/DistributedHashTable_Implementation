@@ -122,13 +122,14 @@ class FingerEntry(object):
         return id in self.interval
 
 class ChordNode(object):
-    def __init__(self, node_id, known_node = None):
-        self.node = node_id
+    def __init__(self, port, known_node = None):
+        self.node = (port - BASE_PORT) % NODES
         self.finger = [None] + [FingerEntry(self.node, k) for k in range(1, M+1)]  # indexing starts at 1
         self.predecessor = None
         self.keys = {}
         self.joined = False
-        self.buddy_port = self.lookup_node(known_node)
+        if known_node is not None:
+            self.buddy_port = self.lookup_node(known_node)
         
         #Then use TCP and pickle to listen for incomming connections
         listener_thread = threading.Thread(target=self.listener, args=(ChordNode.lookup_node(self.node),))
@@ -148,7 +149,8 @@ class ChordNode(object):
         
         while True:
             conn, addr = listener_socket.accept()
-            procedure, argument1, argument2 = pickle.loads(conn.recv(BUF_SZ))
+            loaded_data = pickle.loads(conn.recv(BUF_SZ))
+            procedure, argument1, argument2 = loaded_data
             
             #Spin up thread to handle request
             handle_thr = threading.Thread(target=self.handle_rpc, args=(conn, addr, procedure, argument1, argument2))
@@ -167,7 +169,7 @@ class ChordNode(object):
     def join_network(self, np): #COMPLETELY FOLLOW PSEUDO CODE
         self.log(f"{self.node}.join({np})")
         #if the node recieved an existing network port number join it
-        if np:
+        if np is not None:
             self.init_finger_table(np)
             self.update_others() # Move keys between (predacessor, N] from sucessor if any
             #self.log(f'Joined Existing Network with {known_node}')
@@ -180,7 +182,10 @@ class ChordNode(object):
             self.predecessor = self.node
         
         self.joined = True
-        
+        #start up run on a daemon thread
+        run_thread = threading.Thread(target=self.run)
+        run_thread.daemon = True
+        run_thread.start()
             
             
         #self.log_finger_table()
@@ -208,6 +213,9 @@ class ChordNode(object):
                 self.finger[i + 1].node = self.call_rpc(np, 'find_successor', self.finger[i + 1].start)
 
         self.log(f'init_finger_table: {self.__repr__()}')
+        
+       
+        
 
         
     def update_others(self):
@@ -374,10 +382,11 @@ class ChordNode(object):
     #Data Store Section
 
     def get_value(self, key):
+        print('get_value()')
         hashed_key = hash_key(key)
         if self.is_responsible_for_key(hashed_key):
             # If this node is responsible, return the value
-            return self.local_store.get(hashed_key, "Key not found")
+            return self.retrieve_data(key)
         else:
             # Otherwise, route the query to the correct node
             successor = self.find_successor(hashed_key)
@@ -385,9 +394,10 @@ class ChordNode(object):
 
     def put_value(self, key, value):
         hashed_key = hash_key(key)
+        print(f"put_value({key}, {value})")
         if self.is_responsible_for_key(hashed_key):
             # If this node is responsible, store the key-value pair locally
-            self.local_store[hashed_key] = value
+            self.store_data(key, value)
             return "Value stored successfully"
         else:
             # Otherwise, route the storage request to the correct node
@@ -397,22 +407,53 @@ class ChordNode(object):
     def is_responsible_for_key(self, hashed_key):
         """Determine if this node is responsible for a given hashed_key."""
         predecessor = self.call_rpc(self.predecessor, 'get_id')
-        return hashed_key in ModRange(predecessor + 1, self.node_id + 1, NODES)
+        return hashed_key in ModRange(predecessor + 1, self.node + 1, NODES)
 
+    def get_id(self):
+        return self.node
 
     def store_data(self, key, value):
         """Store data at this node."""
-        self.data_store[key] = value
+        self.keys[key] = value
         print(f"Data stored at Node {self.node}: Key = {key}, Value = {value}")
 
     def retrieve_data(self, key):
         """Retrieve data from this node."""
-        value = self.data_store.get(key, None)
+        value = self.keys.get(key, None)
         print(f"Data retrieved from Node {self.node}: Key = {key}, Value = {value}")
         return value
 
+    def store_data_on_node(port, key, value):
+        """RPC to store a key-value pair in the Chord DHT."""
+        node_address = ChordNode.lookup_node(port)
+        print(f"Storing data: {key} -> {value} on node at port {port}")
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.connect(node_address)
+            # Send the RPC to store the key-value pair
+            s.sendall(pickle.dumps(('put_value', key, value)))
+            # Receive and print the response
+            response = pickle.loads(s.recv(BUF_SZ))
+            print(f"Response from node: {response}")
+            return response
+    
+    def get_value_from_node(port, key):
+        """RPC to query a value for the given key from the Chord DHT."""
+        node_address = ChordNode.lookup_node(port)
+        print(f"Querying for key: {key} from node at port {port}")
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            try:
+                s.connect(node_address)
+                # Send the RPC to get the key-value pair
+                s.sendall(pickle.dumps(('get_value', key, None)))
+                # Receive and print the response
+                print('checkpoint1')
+                response = pickle.loads(s.recv(BUF_SZ))
+                return response
+            except Exception as e:
+                print(f"Error while querying key: {key} -> {e}")
+                return None
 
-
+    
 
 
 
@@ -446,5 +487,12 @@ if __name__ == '__main__':
         else:
             known_node_id = 0
         
-        node = ChordNode(node_id, known_node_id)
-        node.run()
+        node1 = ChordNode(2)
+        node2 = ChordNode(1, 2)
+        node3 = ChordNode(5, 1)
+        node4 = ChordNode(0, 2)
+        
+
+        
+        while(True):
+            pass

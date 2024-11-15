@@ -4,7 +4,7 @@ import socket
 import hashlib
 import csv
 import os
-from chord_node import ChordNode, hash_key, BASE_PORT, BUF_SZ
+from chord_node import ChordNode
 
 '''
 
@@ -34,36 +34,30 @@ if __name__ == '__main__':
             data = row[1:]  #store other columns as data
             store_data_on_node(node_port, hashed_key, data)'''
             
+
 def populate_from_qb(port, filename, rows=None):
     node = ChordNode.lookup_addr(port)
     print(f"Populating data from {filename} starting at node {node}")
 
     with open(filename, 'r') as csvfile:
         csvreader = csv.reader(csvfile)
-        
-        # Assuming the first row is a header row
-        headers = next(csvreader)
-        
+        headers = next(csvreader)  # Skip header row
+
         count = 0
         for row in csvreader:
-            # Extract key and value based on your data structure
-            player_id = row[0]  # Assume the first column is the player ID
-            year = int(row[1])  # Assume the second column is the year
-            stat_value = row[2:]  # Assume the rest are stats
-            
-            # Create a tuple for the key, e.g., ('player_id/year')
-            key = (f"{player_id}", year)
-            
-            # Serialize the stat value to make it easy to transport over RPC
+            player_id = row[0]
+            year = int(row[3])
+            stat_value = row  # All columns as the value
+            key = f"{player_id}/{year}"
             value = pickle.dumps(stat_value)
-            
-            # Put the key-value pair into the network
-            print(f"Inserting key: {key}, Value: {stat_value}")
-            ChordNode.put_value(node, key, value)
-            
+
+            # Store in the Chord network
+            ChordNode.store_data_on_node(port, key, value)
+
             count += 1
             if rows and count >= rows:
                 break
+
 
             
 if __name__ == '__main__':
@@ -76,8 +70,9 @@ if __name__ == '__main__':
         print("python chord_populate.py {} {} {}".format(port, filename, rows))
         print()
     else:
+        print(sys.argv)
         port = int(sys.argv[1])
         filename = os.path.expanduser(sys.argv[2])
-        rows = None if len(sys.argv) < 4 else int(sys.argv[4])
+        rows = None if len(sys.argv) < 3 else int(sys.argv[3])
         
     populate_from_qb(port, filename, rows)
