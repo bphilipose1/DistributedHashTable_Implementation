@@ -1,7 +1,5 @@
 import sys
 import pickle
-import socket
-import hashlib
 import csv
 import os
 from chord_node import ChordNode
@@ -36,8 +34,7 @@ if __name__ == '__main__':
             
 
 def populate_from_qb(port, filename, rows=None):
-    node = ChordNode.lookup_addr(port)
-    print(f"Populating data from {filename} starting at node {node}")
+    print(f"Populating data from {filename} starting at port {port}")
 
     with open(filename, 'r') as csvfile:
         csvreader = csv.reader(csvfile)
@@ -52,7 +49,8 @@ def populate_from_qb(port, filename, rows=None):
             value = pickle.dumps(stat_value)
 
             # Store in the Chord network
-            ChordNode.store_data_on_node(port, key, value)
+            address = ('localhost', port)
+            ChordNode.store_data_on_node(address, key, value)
 
             count += 1
             if rows and count >= rows:

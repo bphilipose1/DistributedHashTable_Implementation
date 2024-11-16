@@ -1,0 +1,10 @@
+from chord_node import ChordNode
+temp = ChordNode(34021)
+y = ChordNode.lookup_addr(34245)
+x = ChordNode.lookup_node(y)
+z = ChordNode.lookup_addr(x[1])
+w = ChordNode.lookup_node(z)
+print(y)
+print(x)
+print(z)
+print(w)

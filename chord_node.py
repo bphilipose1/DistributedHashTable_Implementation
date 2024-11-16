@@ -5,14 +5,14 @@ import socket
 import pickle
 import time
 
-M = 3  # FIXME: 3 Test environment, normally = hashlib.sha1().digest_size * 8
+M = hashlib.sha1().digest_size * 8
 NODES = 2**M
 BUF_SZ = 4096  # socket recv arg
 BACKLOG = 100  # socket listen arg
-BASE_PORT = 43544  # for testing use port numbers on localhost at BASE_PORT+n
-
-def hash_key(key):
-    return int(hashlib.sha1(key.encode()).hexdigest(), 16) % NODES
+BASE_PORT = 0  # for testing use port numbers on localhost at BASE_PORT+n
+POSSIBLE_HOSTS = ['localhost']  # Limit to localhost for this assignment
+POSSIBLE_PORTS = range(0, 2**16)  # All possible ports
+TEST_PORTS = (34143, 34145, 34146, 34147, 34149)
 
 class ModRange(object):
     """
@@ -122,25 +122,30 @@ class FingerEntry(object):
         return id in self.interval
 
 class ChordNode(object):
-    def __init__(self, port, known_node = None):
-        self.node = (port - BASE_PORT) % NODES
+    def __init__(self, port, known_node_port = None):
+        if ChordNode.node_map is None:
+            self._initialize_node_map()
+        self.node = ChordNode.lookup_addr(port)
+        print(f'Starting up Nodes input ({port}) Got Node: {ChordNode.lookup_addr(port)}, Port Number: {ChordNode.lookup_node(self.node)}')
+        print("Node ID: ", self.node)
         self.finger = [None] + [FingerEntry(self.node, k) for k in range(1, M+1)]  # indexing starts at 1
         self.predecessor = None
         self.keys = {}
         self.joined = False
-        if known_node is not None:
-            self.buddy_port = self.lookup_node(known_node)
+        self.buddy_node = None
+        if known_node_port is not None:
+            self.buddy_node = ChordNode.lookup_addr(known_node_port)
         
         #Then use TCP and pickle to listen for incomming connections
         listener_thread = threading.Thread(target=self.listener, args=(ChordNode.lookup_node(self.node),))
         listener_thread.daemon = True
         listener_thread.start()
         
-        self.log(f'starting node {self.node} joining via buddy at port {known_node}')
-        self.join_network(known_node)#join the network and use 'system assigned port number for itself'
-
-        
-        
+        self.log(f'starting node {self.node} joining via buddy at port {self.buddy_node}')
+        self.join_network(self.buddy_node)#join the network and use 'system assigned port number for itself'
+          
+    node_map = None      
+    
     def listener(self, address):
         self.log(f'serve_forever({address})')
         listener_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -159,13 +164,10 @@ class ChordNode(object):
     def run(self):
         #Repeatedly run printing log_finger_table and sleep for 5 seconds
         while True:
-            print('Heartbeat' + repr(self))
-            time.sleep(5)
-
+            print('Heartbeat' + repr(self) + "\nStorage Size: " + str(len(self.keys)))
+            time.sleep(5)  
        
-       
-       
-#FIGURE 6  - JOINING A NETWORK
+    #FIGURE 6  - JOINING A NETWORK
     def join_network(self, np): #COMPLETELY FOLLOW PSEUDO CODE
         self.log(f"{self.node}.join({np})")
         #if the node recieved an existing network port number join it
@@ -190,13 +192,12 @@ class ChordNode(object):
             
         #self.log_finger_table()
             
-
     def init_finger_table(self, np): #COMPLETELY FOLLOWS PSEUDO CODE
 
         # Step 1: Initialize the first finger entry (successor)
         print('checkpoint1`')
         self.finger[1].node = self.call_rpc(np, 'find_successor', self.finger[1].start)
-        print('checkpoint2')
+        print('checkpoint2: ', self.finger[1].node)
         self.predecessor = self.call_rpc(self.successor, 's_predecessor')
         print(f'checkpoint3 - Attempting to update sucessor node {self.successor} predecessors value to: {self.node}')
         print(self.call_rpc(self.successor, 's_predecessor', self.node))
@@ -213,10 +214,6 @@ class ChordNode(object):
                 self.finger[i + 1].node = self.call_rpc(np, 'find_successor', self.finger[i + 1].start)
 
         self.log(f'init_finger_table: {self.__repr__()}')
-        
-       
-        
-
         
     def update_others(self):
         """ Update all other node that should have this node in their finger tables """
@@ -241,11 +238,6 @@ class ChordNode(object):
             return str(self.__repr__())
         else:
             return 'did nothing {}'.format(self.__repr__())
-
-        
-
-
-
     @property
     def successor(self):
         #self.log(f"{self.node}.successor()")
@@ -258,7 +250,6 @@ class ChordNode(object):
         self.log(f"{self.node}.successor()")
         self.log(f"\t{self.node}.successor() --> {self.finger[1].node}")
         
-
     def s_predecessor(self, id = None):
         self.log(self.__repr__())
         if id != None:
@@ -271,9 +262,6 @@ class ChordNode(object):
             self.log(f"{self.node}.predecessor()")
             self.log(f"\t{self.node}.predecessor() --> {self.predecessor}")
             return self.predecessor
-
-
-
 
 #FIGURE 4 - FINDING NODES
     def find_successor(self, id): #COMPLETELY FOLLOWS PSEUDOCODE
@@ -294,7 +282,6 @@ class ChordNode(object):
         #self.log(f"Entered find_predecessor...[{np}]")
         return np
 
-
     def closest_preceding_finger(self, id):
         '''Go through finger table and find closest bucket range that is BEFORE the target id'''
         self.log(f'{self.node}.closest_preceding_finger({id})')
@@ -304,25 +291,63 @@ class ChordNode(object):
                 return self.finger[i].node
         #self.log(f"No closest preceding finger found for {id}, returning self node: {self.node}")
         return self.node  # If no finger is found, return the current node
-
-
-
-
-
-
-    #RPC SECTION
+    
+    #Lookup Table Section 
     @staticmethod
-    def lookup_node(node_id):
-        return 'localhost', BASE_PORT + node_id
+    def lookup_node(n):
+        print(f"Looking up node ID: {n}")
+        """Given a node ID, return the corresponding (host, port) tuple."""
+        if ChordNode.node_map is None:
+            ChordNode_initialize_node_map()
+        addr = ChordNode.node_map.get(n)
+        if addr is None:
+            raise ValueError(f"Node ID {n} not found in node_map.")
+        host, port = addr.split(':')
+        print(f"Node ID: {n} -> {host}:{port}")
+        return (host, int(port))
+
+    @staticmethod
+    def lookup_addr(port, host='localhost'):
+        """Given a port, return the corresponding node ID."""
+        print(f"Looking up port: {port}")
+        if ChordNode.node_map is None:
+            raise RuntimeError("Node map not initialized. Call _initialize_node_map first.")
+        addr = f"{host}:{port}"
+        for node_id, mapped_addr in ChordNode.node_map.items():
+            if mapped_addr == addr:
+                print(f"Port: {port} -> Node ID: {node_id}")
+                return node_id
+                
+        raise ValueError(f"Port {port} not found in node_map.")
+
+    @staticmethod
+    def hash_key(key):
+        return int(hashlib.sha1(key.encode()).hexdigest(), 16) % NODES
     
     @staticmethod
-    def lookup_addr(port, host = 'localhost'):
-        return abs(BASE_PORT - int(port))
-
+    def _initialize_node_map():
+        """Precompute the node map with all possible ports."""
+        POSSIBLE_HOSTS = ['localhost']
+        POSSIBLE_PORTS = range(BASE_PORT, 2**16)
+        ChordNode.node_map = {}
+        for host in POSSIBLE_HOSTS:
+            for port in POSSIBLE_PORTS:
+                addr = f"{host}:{port}"
+                hashed_id = ChordNode.hash_key(addr)
+                if hashed_id in ChordNode.node_map:
+                    print(f"Cannot use {addr}, hash conflict with node ID {hashed_id}")
+                    
+                else:
+                    ChordNode.node_map[hashed_id] = addr
+        #print all items in the node_map
+        for k, v in ChordNode.node_map.items():
+            print(f"Node ID: Node_Map[ {k} ] = {v}")
+                     
+    #RPC Section
     def handle_rpc(self, client_conn, sender_addr, method, arg1, arg2):
         '''Unmarshal the RPC call process it and send the result back to the client'''
-        #print(f'Handling {method} from {sender_addr[1]}')
-        sender_node = self.lookup_addr(sender_addr[1])
+        print(f'Handling {method} from {sender_addr[1]}')
+        sender_node = ChordNode.lookup_addr(sender_addr[1])
         result = self.dispatch_rpc(sender_node, method, arg1, arg2)
         client_conn.sendall(pickle.dumps(result))   
 
@@ -349,6 +374,7 @@ class ChordNode(object):
 
     def call_rpc(self, send_to_node, method, arg1 = None, arg2 = None):
         '''Use TCP and pickle to send a remote procedure call to another node'''
+        print(f'{self.node} Calling RPC {send_to_node} {method} {arg1} {arg2}')
         if arg1 is None and arg2 is None:
             self.log(f'{send_to_node}.{method}()')
         elif arg1 is not None and arg2 is None:
@@ -383,7 +409,7 @@ class ChordNode(object):
 
     def get_value(self, key):
         print('get_value()')
-        hashed_key = hash_key(key)
+        hashed_key = ChordNode.hash_key(key)
         if self.is_responsible_for_key(hashed_key):
             # If this node is responsible, return the value
             return self.retrieve_data(key)
@@ -393,7 +419,7 @@ class ChordNode(object):
             return self.call_rpc(successor, 'get_value', key)
 
     def put_value(self, key, value):
-        hashed_key = hash_key(key)
+        hashed_key = ChordNode.hash_key(key)
         print(f"put_value({key}, {value})")
         if self.is_responsible_for_key(hashed_key):
             # If this node is responsible, store the key-value pair locally
@@ -425,10 +451,9 @@ class ChordNode(object):
 
     def store_data_on_node(port, key, value):
         """RPC to store a key-value pair in the Chord DHT."""
-        node_address = ChordNode.lookup_node(port)
         print(f"Storing data: {key} -> {value} on node at port {port}")
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            s.connect(node_address)
+            s.connect(port)
             # Send the RPC to store the key-value pair
             s.sendall(pickle.dumps(('put_value', key, value)))
             # Receive and print the response
@@ -436,17 +461,15 @@ class ChordNode(object):
             print(f"Response from node: {response}")
             return response
     
-    def get_value_from_node(port, key):
+    def get_value_from_node(node_address, key):
         """RPC to query a value for the given key from the Chord DHT."""
-        node_address = ChordNode.lookup_node(port)
-        print(f"Querying for key: {key} from node at port {port}")
+        print(f"Querying for key: {key} from node at port {node_address[1]}")
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             try:
                 s.connect(node_address)
                 # Send the RPC to get the key-value pair
                 s.sendall(pickle.dumps(('get_value', key, None)))
                 # Receive and print the response
-                print('checkpoint1')
                 response = pickle.loads(s.recv(BUF_SZ))
                 return response
             except Exception as e:
@@ -481,16 +504,16 @@ if __name__ == '__main__':
         raise ValueError("Invalid Passed Arguments. Should be \'python chord_node.py node_port network_port\'")
     else:
         #get the port number for the network
-        node_id = int(sys.argv[1])
+        node_port = int(sys.argv[1])
         if len(sys.argv) > 2:
-            known_node_id = int(sys.argv[2])
+            known_node_port = int(sys.argv[2])
         else:
-            known_node_id = 0
+            known_node_port = 0
         
-        node1 = ChordNode(2)
-        node2 = ChordNode(1, 2)
-        node3 = ChordNode(5, 1)
-        node4 = ChordNode(0, 2)
+        node1 = ChordNode(TEST_PORTS[1])
+        node2 = ChordNode(TEST_PORTS[0], TEST_PORTS[1])
+        node3 = ChordNode(TEST_PORTS[2], TEST_PORTS[0])
+        node4 = ChordNode(TEST_PORTS[3], TEST_PORTS[2])
         
 
         
