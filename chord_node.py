@@ -298,7 +298,7 @@ class ChordNode(object):
         print(f"Looking up node ID: {n}")
         """Given a node ID, return the corresponding (host, port) tuple."""
         if ChordNode.node_map is None:
-            ChordNode_initialize_node_map()
+            ChordNode._initialize_node_map()
         addr = ChordNode.node_map.get(n)
         if addr is None:
             raise ValueError(f"Node ID {n} not found in node_map.")
