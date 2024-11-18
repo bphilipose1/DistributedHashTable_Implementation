@@ -5,14 +5,13 @@ import socket
 import pickle
 import time
 
-M = hashlib.sha1().digest_size * 8
+M = 3#hashlib.sha1().digest_size * 8
 NODES = 2**M
 BUF_SZ = 4096  # socket recv arg
 BACKLOG = 100  # socket listen arg
-BASE_PORT = 0  # for testing use port numbers on localhost at BASE_PORT+n
 POSSIBLE_HOSTS = ['localhost']  # Limit to localhost for this assignment
-POSSIBLE_PORTS = range(0, 2**16)  # All possible ports
-TEST_PORTS = (34143, 34145, 34146, 34147, 34149)
+POSSIBLE_PORTS = range(34000, 2**16)  # possible ports
+TEST_PORTS = (34000, 34001, 34002, 34003, 34004)#(34143, 34145, 34146, 34147, 34149)
 
 class ModRange(object):
     """
@@ -126,6 +125,7 @@ class ChordNode(object):
         if ChordNode.node_map is None:
             self._initialize_node_map()
         self.node = ChordNode.lookup_addr(port)
+        self.port = port
         print(f'Starting up Nodes input ({port}) Got Node: {ChordNode.lookup_addr(port)}, Port Number: {ChordNode.lookup_node(self.node)}')
         print("Node ID: ", self.node)
         self.finger = [None] + [FingerEntry(self.node, k) for k in range(1, M+1)]  # indexing starts at 1
@@ -149,17 +149,19 @@ class ChordNode(object):
     def listener(self, address):
         self.log(f'serve_forever({address})')
         listener_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        listener_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         listener_socket.bind(address)
         listener_socket.listen()
-        
+
         while True:
-            conn, addr = listener_socket.accept()
+            conn, addr = listener_socket.accept()  # Returns a new socket for the connection
             loaded_data = pickle.loads(conn.recv(BUF_SZ))
             procedure, argument1, argument2 = loaded_data
-            
-            #Spin up thread to handle request
+
+            # Spin up thread to handle request
             handle_thr = threading.Thread(target=self.handle_rpc, args=(conn, addr, procedure, argument1, argument2))
             handle_thr.start()
+
        
     def run(self):
         #Repeatedly run printing log_finger_table and sleep for 5 seconds
@@ -327,8 +329,6 @@ class ChordNode(object):
     @staticmethod
     def _initialize_node_map():
         """Precompute the node map with all possible ports."""
-        POSSIBLE_HOSTS = ['localhost']
-        POSSIBLE_PORTS = range(BASE_PORT, 2**16)
         ChordNode.node_map = {}
         for host in POSSIBLE_HOSTS:
             for port in POSSIBLE_PORTS:
@@ -346,14 +346,13 @@ class ChordNode(object):
     #RPC Section
     def handle_rpc(self, client_conn, sender_addr, method, arg1, arg2):
         '''Unmarshal the RPC call process it and send the result back to the client'''
-        print(f'Handling {method} from {sender_addr[1]}')
-        sender_node = ChordNode.lookup_addr(sender_addr[1])
-        result = self.dispatch_rpc(sender_node, method, arg1, arg2)
+
+        result = self.dispatch_rpc(method, arg1, arg2)
         client_conn.sendall(pickle.dumps(result))   
 
         
 
-    def dispatch_rpc(self, sender_node, method, arg1, arg2):
+    def dispatch_rpc(self, method, arg1, arg2):
         ###self.log(f'Dispatching:{sender_node} {method}, {arg1}, {arg2}')
         if method == 'successor':
             ###self.log(f'HANDLING (successor): {self.successor}')
@@ -372,9 +371,13 @@ class ChordNode(object):
             return 'NoMethodError'
 
 
-    def call_rpc(self, send_to_node, method, arg1 = None, arg2 = None):
-        '''Use TCP and pickle to send a remote procedure call to another node'''
+    def call_rpc(self, send_to_node, method, arg1=None, arg2=None):
+        """
+        Use TCP and pickle to send a remote procedure call (RPC) to another node.
+        """
         print(f'{self.node} Calling RPC {send_to_node} {method} {arg1} {arg2}')
+
+        # Log the RPC call
         if arg1 is None and arg2 is None:
             self.log(f'{send_to_node}.{method}()')
         elif arg1 is not None and arg2 is None:
@@ -382,27 +385,45 @@ class ChordNode(object):
         elif arg1 is not None and arg2 is not None:
             self.log(f'{send_to_node}.{method}({arg1}, {arg2})')
 
-        ###self.log(f'Call_RPC({send_to_node}, {method}, {arg1}, {arg2})')
-        address = ChordNode.lookup_node(send_to_node)
+        # Resolve the address of the target node
+        try:
+            address = ChordNode.lookup_node(send_to_node)
+        except ValueError as e:
+            self.log(f"Error resolving address for node {send_to_node}: {e}")
+            return None
+
+        # Perform the RPC
+        result = None
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             try:
-                s.settimeout(5)
+                s.settimeout(5)  # Set a timeout for connection and communication
+                self.log(f"Connecting to {address}")
                 s.connect(address)
-                s.sendall(pickle.dumps((method, arg1, arg2)))
-                result = pickle.loads(s.recv(BUF_SZ))
+
+                # Serialize and send the RPC data
+                rpc_data = pickle.dumps((method, arg1, arg2))
+                s.sendall(rpc_data)
+                self.log(f"RPC data sent: {method}, {arg1}, {arg2}")
+
+                # Receive and deserialize the response
+                response_data = s.recv(BUF_SZ)
+                result = pickle.loads(response_data)
+                self.log(f"Received RPC response: {result}")
+            except socket.timeout:
+                self.log(f"Timeout occurred while connecting to {address}")
+            except ConnectionError as e:
+                self.log(f"Connection error: {e}")
             except Exception as e:
-                print('Error: ', e)
-                result = None 
+                self.log(f"Unexpected error during RPC: {e}")
             finally:
                 s.close()
-        if result != 'NoMethodError':
-            #self.log(f"Got RPC RESPONSE {result}")
-            self.log(f'\tresult: {result}')
-            
 
-            return result
-        else:
-            raise ValueError('NoMethodError')
+        # Check for NoMethodError in the result
+        if result == 'NoMethodError':
+            raise ValueError(f"NoMethodError: Method '{method}' not found on node {send_to_node}")
+
+        return result
+
 
 
     #Data Store Section
