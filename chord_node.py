@@ -11,8 +11,8 @@ BUF_SZ = 4096  # socket recv arg
 BACKLOG = 100  # socket listen arg
 POSSIBLE_HOSTS = ['localhost']  # Limit to localhost for this assignment
 POSSIBLE_PORTS = range(34000, 2**16)  # possible ports
-TEST_PORTS = (34000, 34001, 34002, 34003, 34004)#(34143, 34145, 34146, 34147, 34149)
-
+#TEST_PORTS = (34143, 34145, 34146, 34147, 34149)
+TEST_PORTS = (34000, 34001, 34002, 34003, 34004) #Used for testing at M = 3
 class ModRange(object):
     """
     Range-like object that wraps around 0 at some divisor using modulo arithmetic.
@@ -167,6 +167,11 @@ class ChordNode(object):
         #Repeatedly run printing log_finger_table and sleep for 5 seconds
         while True:
             print('Heartbeat' + repr(self) + "\nStorage Size: " + str(len(self.keys)))
+            print("\n Keys:")
+            for key, _ in list(self.keys.items()):#print all the hashe values for the keys
+                hashed_key = ChordNode.hash_key(key)
+                print(f"\t{hashed_key}")
+                   
             time.sleep(5)  
        
     #FIGURE 6  - JOINING A NETWORK
@@ -176,7 +181,10 @@ class ChordNode(object):
         if np is not None:
             self.init_finger_table(np)
             self.update_others() # Move keys between (predacessor, N] from sucessor if any
-            #self.log(f'Joined Existing Network with {known_node}')
+            # Transfer keys from the successor to this node
+            transferred_keys = self.call_rpc(self.successor, 'transfer_keys', self.predecessor + 1, self.node)
+            self.store_data_bulk(transferred_keys)
+            self.log(f"Node {self.node} received keys from {self.successor}: {transferred_keys}")
         # if the port number is 0, node is by itself, start a new network
         else:
             #self.log('No Existing Network, Created a new Chord Network')
@@ -192,8 +200,21 @@ class ChordNode(object):
         run_thread.start()
             
             
-        #self.log_finger_table()
-            
+    def transfer_keys(self, start, end):
+        """Transfer keys in the range (start, end] to a new node."""
+        keys_to_transfer = {k: v for k, v in self.keys.items() if ChordNode.hash_key(k) in ModRange(start, end+1, NODES)}
+        for k in keys_to_transfer:
+            del self.keys[k]
+        self.log(f"Transferred keys to new node in range ({start}, {end}]: {keys_to_transfer}")
+        return keys_to_transfer
+
+    def store_data_bulk(self, data):
+        """Store multiple key-value pairs in the node."""
+        print('got the data to store: ', data)
+        self.keys.update(data)
+        self.log(f"Stored bulk data: {data}")
+
+        
     def init_finger_table(self, np): #COMPLETELY FOLLOWS PSEUDO CODE
 
         # Step 1: Initialize the first finger entry (successor)
@@ -529,13 +550,17 @@ if __name__ == '__main__':
         if len(sys.argv) > 2:
             known_node_port = int(sys.argv[2])
         else:
-            known_node_port = 0
+            known_node_port = None
         
-        node1 = ChordNode(TEST_PORTS[1])
-        node2 = ChordNode(TEST_PORTS[0], TEST_PORTS[1])
-        node3 = ChordNode(TEST_PORTS[2], TEST_PORTS[0])
-        node4 = ChordNode(TEST_PORTS[3], TEST_PORTS[2])
+        node = ChordNode(node_port, known_node_port)
+        #node1 = ChordNode(TEST_PORTS[1])
+        #node2 = ChordNode(TEST_PORTS[0], TEST_PORTS[1])
+        #node3 = ChordNode(TEST_PORTS[2], TEST_PORTS[0])
+        #node4 = ChordNode(TEST_PORTS[3], TEST_PORTS[2])
         
+        
+        #time.sleep(20)
+        #node5 = ChordNode(TEST_PORTS[4], TEST_PORTS[3])
 
         
         while(True):
