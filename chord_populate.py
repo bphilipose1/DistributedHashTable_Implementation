@@ -4,35 +4,6 @@ import csv
 import os
 from chord_node import ChordNode
 
-'''
-
-def store_data_on_node(port, key, data):
-    # Connect to the node and send data using RPC
-    address = ('localhost', port)
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.connect(address)
-        s.sendall(pickle.dumps(('store_key_value', key, data)))
-        response = pickle.loads(s.recv(BUF_SZ))
-        return response
-
-if __name__ == '__main__':
-    if len(sys.argv) != 3:
-        print("Usage: python chord_populate.py [node_port] [filename]")
-        sys.exit(1)
-    
-    node_port = int(sys.argv[1])
-    filename = sys.argv[2]
-
-    with open(filename, 'r') as file:
-        csv_reader = csv.reader(file)
-        for row in csv_reader:
-            player_id, year = row[0], row[3]
-            key = int(f"{player_id}{year}")
-            hashed_key = hash_key(key)
-            data = row[1:]  #store other columns as data
-            store_data_on_node(node_port, hashed_key, data)'''
-            
-
 def populate_from_qb(port, filename, rows=None):
     print(f"Populating data from {filename} starting at port {port}")
 

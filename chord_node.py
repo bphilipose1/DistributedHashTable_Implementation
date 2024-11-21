@@ -168,10 +168,15 @@ class ChordNode(object):
         while True:
             print('Heartbeat' + repr(self) + "\nStorage Size: " + str(len(self.keys)))
             print("\n Keys:")
-            for key, _ in list(self.keys.items()):#print all the hashe values for the keys
-                hashed_key = ChordNode.hash_key(key)
-                print(f"\t{hashed_key}")
-                   
+            #store just the keys in a list
+            temp_list = list(self.keys.keys())
+            #hash each key and put in a new list
+            hashed_keys = [ChordNode.hash_key(k) for k in temp_list]
+            #print the hashed keys in sorted order
+            print(sorted(hashed_keys))
+            
+            
+            
             time.sleep(5)  
        
     #FIGURE 6  - JOINING A NETWORK
@@ -184,7 +189,7 @@ class ChordNode(object):
             # Transfer keys from the successor to this node
             transferred_keys = self.call_rpc(self.successor, 'transfer_keys', self.predecessor + 1, self.node)
             self.store_data_bulk(transferred_keys)
-            self.log(f"Node {self.node} received keys from {self.successor}: {transferred_keys}")
+            
         # if the port number is 0, node is by itself, start a new network
         else:
             #self.log('No Existing Network, Created a new Chord Network')
@@ -205,11 +210,19 @@ class ChordNode(object):
         keys_to_transfer = {k: v for k, v in self.keys.items() if ChordNode.hash_key(k) in ModRange(start, end+1, NODES)}
         for k in keys_to_transfer:
             del self.keys[k]
-        self.log(f"Transferred keys to new node in range ({start}, {end}]: {keys_to_transfer}")
+            
+            
+        #for visual sake hash each of the keys and print them
+        temp_list = list(keys_to_transfer.keys())
+        hashed_keys = [ChordNode.hash_key(k) for k in temp_list]
+        self.log(f"Transferred keys to new node in range ({start}, {end}]: {hashed_keys}")
         return keys_to_transfer
 
     def store_data_bulk(self, data):
         """Store multiple key-value pairs in the node."""
+        if data is None:
+            self.log("No data received for bulk storage.")
+            return
         print('got the data to store: ', data)
         self.keys.update(data)
         self.log(f"Stored bulk data: {data}")
@@ -462,7 +475,7 @@ class ChordNode(object):
 
     def put_value(self, key, value):
         hashed_key = ChordNode.hash_key(key)
-        print(f"put_value({key}, {value})")
+        print(f"put_value({hashed_key})")
         if self.is_responsible_for_key(hashed_key):
             # If this node is responsible, store the key-value pair locally
             self.store_data(key, value)
@@ -470,6 +483,7 @@ class ChordNode(object):
         else:
             # Otherwise, route the storage request to the correct node
             successor = self.find_successor(hashed_key)
+            print(f"put_value({hashed_key}) -> {successor}")
             return self.call_rpc(successor, 'put_value', key, value)
 
     def is_responsible_for_key(self, hashed_key):
