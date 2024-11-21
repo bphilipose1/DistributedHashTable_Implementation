@@ -121,7 +121,16 @@ class FingerEntry(object):
         return id in self.interval
 
 class ChordNode(object):
+    """
+        A class representing a node in a Chord distributed hash table (DHT) network.
+    """
     def __init__(self, port, known_node_port = None):
+        """Initializes a new ChordNode
+
+        Args:
+            port (int): The port number the node will listen on
+            known_node_port (int, optional): Port of a existing node in the target network. Defaults to None.
+        """
         if ChordNode.node_map is None:
             self._initialize_node_map()
         self.node = ChordNode.lookup_addr(port)
@@ -148,6 +157,11 @@ class ChordNode(object):
     node_map = None      
     
     def listener(self, address):
+        """Listen for incoming connections and handle them on port self.port.
+
+        Args:
+            address (tuple): holds the host and port number
+        """
         self.log(f'serve_forever({address})')
         listener_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         listener_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -165,6 +179,9 @@ class ChordNode(object):
 
        
     def run(self):
+        """
+        Run the node's main loop, periodically printing the finger table.
+        """
         #Repeatedly run printing log_finger_table and sleep for 5 seconds
         while True:
             with self.key_lock:
@@ -185,7 +202,12 @@ class ChordNode(object):
             time.sleep(5)  
        
     #FIGURE 6  - JOINING A NETWORK
-    def join_network(self, np): #COMPLETELY FOLLOW PSEUDO CODE
+    def join_network(self, np):
+        """Protocol to join an existing network. or create a new network if passed in np is None.
+
+        Args:
+            np (int): specifies the port number of an existing node in the network. If None, the node will create a new network.
+        """
         self.log(f"{self.node}.join({np})")
         #if the node recieved an existing network port number join it
         if np is not None:
@@ -211,7 +233,12 @@ class ChordNode(object):
             
             
     def transfer_keys(self, start, end):
-        """Transfer keys in the range (start, end] to a new node."""
+        """Transfer keys from this node to its predecessor who has requested it.
+        
+        Args:
+            start (int): The start of the range of keys to transfer
+            end (int): The end of the range of keys to transfer
+        """       
         with self.key_lock:
             keys_to_transfer = {k: v for k, v in self.keys.items() if ChordNode.hash_key(k) in ModRange(start, end+1, NODES)}
             for k in keys_to_transfer:
@@ -226,22 +253,20 @@ class ChordNode(object):
         for k, v in keys_to_transfer.items():
             self.call_rpc(self.predecessor, 'store_data', k, v)
                 
-    def init_finger_table(self, np): #COMPLETELY FOLLOWS PSEUDO CODE
+    def init_finger_table(self, np):
+        """Initialize the finger table of this node using the node at port np.
+
+        Args:
+            np (int): The port number of an existing node in the network.
+        """
 
         # Step 1: Initialize the first finger entry (successor)
-        print('checkpoint1`')
         self.finger[1].node = self.call_rpc(np, 'find_successor', self.finger[1].start)
-        print('checkpoint2: ', self.finger[1].node)
         self.predecessor = self.call_rpc(self.successor, 's_predecessor')
-        print(f'checkpoint3 - Attempting to update sucessor node {self.successor} predecessors value to: {self.node}')
         print(self.call_rpc(self.successor, 's_predecessor', self.node))
-        print('checkpoint4')
-
         
         # Step 2:Populate the rest of the finger table
         for i in range(1, M):
-            
-
             if self.finger[i + 1].start in ModRange(self.node, self.finger[i].node, NODES):
                 self.finger[i + 1].node = self.finger[i].node
             else:
@@ -274,17 +299,33 @@ class ChordNode(object):
             return 'did nothing {}'.format(self.__repr__())
     @property
     def successor(self):
-        #self.log(f"{self.node}.successor()")
-        #self.log(f"\t{self.node}.successor() --> {self.finger[1].node}")
+        """Get the successor of this node.
+
+        Returns:
+            int: The ID of the successor node.
+        """
         return self.finger[1].node
 
     @successor.setter
     def successor(self, id):
+        """Set the successor of this node.
+
+        Args:
+            id (int): The ID of the new successor node.
+        """
         self.finger[1].node = id
         self.log(f"{self.node}.successor()")
         self.log(f"\t{self.node}.successor() --> {self.finger[1].node}")
         
     def s_predecessor(self, id = None):
+        """Get or set the predecessor of the successor of this node.
+
+        Args:
+            id (int, optional): The ID of the new predecessor Node. Defaults to None.
+
+        Returns:
+            _type_: The ID of the predecessor Node.
+        """
         self.log(self.__repr__())
         if id != None:
             self.predecessor = id
@@ -298,7 +339,7 @@ class ChordNode(object):
             return self.predecessor
 
 #FIGURE 4 - FINDING NODES
-    def find_successor(self, id): #COMPLETELY FOLLOWS PSEUDOCODE
+    def find_successor(self, id):
         """ Ask this node to find id's successor = successor(predecessor(id))"""
         self.log(f"{self.node}.find_successor({id})")
         np = self.call_rpc(self.node, 'find_predecessor', id)
@@ -329,8 +370,15 @@ class ChordNode(object):
     #Lookup Table Section 
     @staticmethod
     def lookup_node(n):
+        """Given a node ID, return the corresponding (host, port) tuple.
+        Args:
+            n (int): The node ID to look up.
+        
+        Returns:
+            tuple: A tuple containing the host and port of the node.
+        """
         print(f"Looking up node ID: {n}")
-        """Given a node ID, return the corresponding (host, port) tuple."""
+        
         if ChordNode.node_map is None:
             ChordNode._initialize_node_map()
         addr = ChordNode.node_map.get(n)
@@ -342,7 +390,13 @@ class ChordNode(object):
 
     @staticmethod
     def lookup_addr(port, host='localhost'):
-        """Given a port, return the corresponding node ID."""
+        """Given a port, return the corresponding node ID.
+        Args:
+            port (int): The port number to look up.
+            host (str, optional): The host of the node. Defaults to 'localhost'.
+        Returns:
+            int: The node ID corresponding to the port.
+        """
         print(f"Looking up port: {port}")
         if ChordNode.node_map is None:
             raise RuntimeError("Node map not initialized. Call _initialize_node_map first.")
@@ -356,6 +410,12 @@ class ChordNode(object):
 
     @staticmethod
     def hash_key(key):
+        """Hash a key to a 160-bit integer and return the corresponding node ID.
+        Args:
+            key (str): The key to hash.
+        Returns:
+            int: The node ID corresponding to the hashed key.
+        """
         return int(hashlib.sha1(key.encode()).hexdigest(), 16) % NODES
     
     @staticmethod
@@ -377,20 +437,33 @@ class ChordNode(object):
                      
     #RPC Section
     def handle_rpc(self, client_conn, sender_addr, method, arg1, arg2):
-        '''Unmarshal the RPC call process it and send the result back to the client'''
+        '''Unmarshal the RPC call process it and send the result back to the client
+        Args:
+            client_conn (socket): The client connection socket
+            sender_addr (tuple): The address of the sender
+            method (str): The method to call
+            arg1 (any): The first argument to the method
+            arg2 (any): The second argument to the method
+        '''
         result = self.dispatch_rpc(method, arg1, arg2)
         client_conn.sendall(pickle.dumps(result))   
 
         
 
     def dispatch_rpc(self, method, arg1, arg2):
-        ###self.log(f'Dispatching:{sender_node} {method}, {arg1}, {arg2}')
+        '''Dispatch the RPC call to the appropriate method
+        Args:
+            method (str): The method to call
+            arg1 (any): The first argument to the method
+            arg2 (any): The second argument to the method
+        Returns:
+            any: The result of the method call
+        '''
+        
         if method == 'successor':
-            ###self.log(f'HANDLING (successor): {self.successor}')
             return self.successor
                 
         elif hasattr(self, method):
-            ###self.log(f'HANDLING ({method})...')
             func = getattr(self, method)
             if arg1 is not None and arg2 is not None:
                 return func(arg1, arg2)
@@ -405,6 +478,13 @@ class ChordNode(object):
     def call_rpc(self, send_to_node, method, arg1=None, arg2=None):
         """
         Use TCP and pickle to send a remote procedure call (RPC) to another node.
+        Args:
+            send_to_node (int): The node ID to send the RPC to.
+            method (str): The method to call on the target node.
+            arg1 (any, optional): The first argument to the method. Defaults to None.
+            arg2 (any, optional): The second argument to the method. Defaults to None.
+        Returns:
+            The result of the RPC call.
         """
         print(f'{self.node} Calling RPC {send_to_node} {method} {arg1} {arg2}')
 
@@ -458,8 +538,15 @@ class ChordNode(object):
 
 
     #Data Store Section
-
     def get_value(self, key):
+        """Get the value for a given key from the DHT.
+
+        Args:
+            key (String): The key to query.
+
+        Returns:
+            String: The value associated with the key.
+        """
         print('get_value()')
         hashed_key = ChordNode.hash_key(key)
         if self.is_responsible_for_key(hashed_key):
@@ -471,6 +558,15 @@ class ChordNode(object):
             return self.call_rpc(successor, 'get_value', key)
 
     def put_value(self, key, value):
+        """Store a key-value pair in the DHT.
+
+        Args:
+            key (String): The key to store.
+            value (String): The value to store.
+
+        Returns:
+            String: A success message.
+        """
         hashed_key = ChordNode.hash_key(key)
         print(f"put_value({hashed_key})")
         if self.is_responsible_for_key(hashed_key):
@@ -484,28 +580,53 @@ class ChordNode(object):
             return self.call_rpc(successor, 'put_value', key, value)
 
     def is_responsible_for_key(self, hashed_key):
-        """Determine if this node is responsible for a given hashed_key."""
+        """Determine if this node is responsible for a given hashed_key.
+        Args:
+            hashed_key (int): The hashed key to check.
+        Returns:
+            bool: True if this node is responsible for the key, False otherwise.
+        """
         predecessor = self.call_rpc(self.predecessor, 'get_id')
         return hashed_key in ModRange(predecessor + 1, self.node + 1, NODES)
 
     def get_id(self):
+        """Get the ID of this node.
+
+        Returns:
+            Int: The ID of this node.
+        """
         return self.node
 
     def store_data(self, key, value):
-        """Store data at this node."""
+        """Store data at this node.
+        Args:
+            key (String): The key to store.
+            value (String): The value to store.    
+        """
         with self.key_lock:
             self.keys[key] = value
         print(f"Data stored at Node {self.node}: Key = {key}, Value = {value}")
 
     def retrieve_data(self, key):
-        """Retrieve data from this node."""
+        """Retrieve data from this node.
+        Args:
+            keys (String): The key to retrieve.
+        Returns:
+            String: The value associated with the key.
+        """
         with self.key_lock:
             value = self.keys.get(key, None)
         print(f"Data retrieved from Node {self.node}: Key = {key}, Value = {value}")
         return value
 
     def store_data_on_node(port, key, value):
-        """RPC to store a key-value pair in the Chord DHT."""
+        """RPC to store a key-value pair in the Chord DHT.
+        Args:
+            port (int): The port number of the node to store the data on.
+            key (str): The key to store.
+            value (str): The value to store.
+        Returns:
+            str: A success message."""
         print(f"Storing data: {key} -> {value} on node at port {port}")
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             s.connect(port)
@@ -517,7 +638,14 @@ class ChordNode(object):
             return response
     
     def get_value_from_node(node_address, key):
-        """RPC to query a value for the given key from the Chord DHT."""
+        """RPC to query a value for the given key from the Chord DHT.
+        Args:
+            node_address (tuple): The address of the node to query.
+            key (str): The key to query.
+        Returns:
+            str: The value associated with the key.
+        """
+            
         print(f"Querying for key: {key} from node at port {node_address[1]}")
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             try:
@@ -530,25 +658,26 @@ class ChordNode(object):
             except Exception as e:
                 print(f"Error while querying key: {key} -> {e}")
                 return None
-
-    
-
-
-
         
     def log(self, message):
-        #print(f'[Node {self.node}]: {message}')
+        """Log a message with the node's ID.
+        Args:
+            message (str): The message to log.
+        """
         print(message)
             
     def log_finger_table(self):
+        """Log the current state of the finger table."""
         table_entries = [f"{entry.start}: {entry.node}" for i, entry in enumerate(self.finger) if entry]
         self.log(f"Finger Table: {', '.join(table_entries)}")
         self.log(f"Successor: {self.successor}, Predecessor: {self.predecessor}")
 
     def __str__(self):
+        """Return a string representation of the node."""
         return f'Node[{self.node}]: {self.predecessor}, {self.successor}'
     
     def __repr__(self):
+        """Return a string representation of the node and finger table."""
         fingers = ','.join([str(self.finger[i].node) for i in range(1, M+1)])
         return '<{}: [{}]{}>'.format(self.node, fingers, self.predecessor)
         

@@ -7,6 +7,7 @@ from chord_node import ChordNode
 
 
 if __name__ == '__main__':
+    """Query the Chord network for a specific key"""
     if len(sys.argv) != 4:
         print("Usage: python chord_query.py [node_port] [player_id] [year]")
         print("Example: ")

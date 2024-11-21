@@ -5,21 +5,28 @@ import os
 from chord_node import ChordNode
 
 def populate_from_qb(port, filename, rows=None):
+    """Populate the Chord network with data from a CSV file
+
+    Args:
+        port (Int): Port number to start the Chord network on
+        filename (String): Path to the CSV file to populate from
+        rows (Int, optional): Number of Rows to insert in to DHT from CSV. Defaults to None.
+    """
     print(f"Populating data from {filename} starting at port {port}")
 
     with open(filename, 'r') as csvfile:
         csvreader = csv.reader(csvfile)
-        headers = next(csvreader)  # Skip header row
+        headers = next(csvreader)  #skip header row
 
         count = 0
         for row in csvreader:
             player_id = row[0]
             year = int(row[3])
-            stat_value = row  # All columns as the value
+            stat_value = row  #all columns as the value
             key = f"{player_id}/{year}"
             value = pickle.dumps(stat_value)
 
-            # Store in the Chord network
+            #store in the Chord network
             address = ('localhost', port)
             ChordNode.store_data_on_node(address, key, value)
 
@@ -30,6 +37,7 @@ def populate_from_qb(port, filename, rows=None):
 
             
 if __name__ == '__main__':
+    """Populate the Chord network with data from a CSV file"""
     if len(sys.argv) not in (3, 4):
         print("Usage: python chord_populate.py [node_port] [filename] [MAX_ROWS]")
         print("Example: ")
