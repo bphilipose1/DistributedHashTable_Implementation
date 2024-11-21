@@ -131,6 +131,7 @@ class ChordNode(object):
         self.finger = [None] + [FingerEntry(self.node, k) for k in range(1, M+1)]  # indexing starts at 1
         self.predecessor = None
         self.keys = {}
+        self.key_lock = threading.Lock()
         self.joined = False
         self.buddy_node = None
         if known_node_port is not None:
@@ -166,10 +167,14 @@ class ChordNode(object):
     def run(self):
         #Repeatedly run printing log_finger_table and sleep for 5 seconds
         while True:
-            print('Heartbeat' + repr(self) + "\nStorage Size: " + str(len(self.keys)))
+            with self.key_lock:
+                temp_len = str(len(self.keys))
+                temp_list = list(self.keys.keys())
+                
+            print('Heartbeat' + repr(self) + "\nStorage Size: " + temp_len)
             print("\n Keys:")
             #store just the keys in a list
-            temp_list = list(self.keys.keys())
+            
             #hash each key and put in a new list
             hashed_keys = [ChordNode.hash_key(k) for k in temp_list]
             #print the hashed keys in sorted order
@@ -207,9 +212,10 @@ class ChordNode(object):
             
     def transfer_keys(self, start, end):
         """Transfer keys in the range (start, end] to a new node."""
-        keys_to_transfer = {k: v for k, v in self.keys.items() if ChordNode.hash_key(k) in ModRange(start, end+1, NODES)}
-        for k in keys_to_transfer:
-            del self.keys[k]           
+        with self.key_lock:
+            keys_to_transfer = {k: v for k, v in self.keys.items() if ChordNode.hash_key(k) in ModRange(start, end+1, NODES)}
+            for k in keys_to_transfer:
+                del self.keys[k]           
             
         #for visual sake hash each of the keys and print them
         temp_list = list(keys_to_transfer.keys())
@@ -487,12 +493,14 @@ class ChordNode(object):
 
     def store_data(self, key, value):
         """Store data at this node."""
-        self.keys[key] = value
+        with self.key_lock:
+            self.keys[key] = value
         print(f"Data stored at Node {self.node}: Key = {key}, Value = {value}")
 
     def retrieve_data(self, key):
         """Retrieve data from this node."""
-        value = self.keys.get(key, None)
+        with self.key_lock:
+            value = self.keys.get(key, None)
         print(f"Data retrieved from Node {self.node}: Key = {key}, Value = {value}")
         return value
 
