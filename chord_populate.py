@@ -44,4 +44,4 @@ if __name__ == '__main__':
         filename = os.path.expanduser(sys.argv[2])
         rows = None if len(sys.argv) < 3 else int(sys.argv[3])
         
-    populate_from_qb(port, filename, rows)
+    populate_from_qb(port, filename, rows + 1)

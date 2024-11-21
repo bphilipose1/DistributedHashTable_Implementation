@@ -187,8 +187,8 @@ class ChordNode(object):
             self.init_finger_table(np)
             self.update_others() # Move keys between (predacessor, N] from sucessor if any
             # Transfer keys from the successor to this node
-            transferred_keys = self.call_rpc(self.successor, 'transfer_keys', self.predecessor + 1, self.node)
-            self.store_data_bulk(transferred_keys)
+            self.call_rpc(self.successor, 'transfer_keys', self.predecessor + 1, self.node)
+
             
         # if the port number is 0, node is by itself, start a new network
         else:
@@ -209,25 +209,17 @@ class ChordNode(object):
         """Transfer keys in the range (start, end] to a new node."""
         keys_to_transfer = {k: v for k, v in self.keys.items() if ChordNode.hash_key(k) in ModRange(start, end+1, NODES)}
         for k in keys_to_transfer:
-            del self.keys[k]
-            
+            del self.keys[k]           
             
         #for visual sake hash each of the keys and print them
         temp_list = list(keys_to_transfer.keys())
         hashed_keys = [ChordNode.hash_key(k) for k in temp_list]
         self.log(f"Transferred keys to new node in range ({start}, {end}]: {hashed_keys}")
-        return keys_to_transfer
-
-    def store_data_bulk(self, data):
-        """Store multiple key-value pairs in the node."""
-        if data is None:
-            self.log("No data received for bulk storage.")
-            return
-        print('got the data to store: ', data)
-        self.keys.update(data)
-        self.log(f"Stored bulk data: {data}")
-
         
+        #perform store_data rpc to its  for each key-value pair
+        for k, v in keys_to_transfer.items():
+            self.call_rpc(self.predecessor, 'store_data', k, v)
+                
     def init_finger_table(self, np): #COMPLETELY FOLLOWS PSEUDO CODE
 
         # Step 1: Initialize the first finger entry (successor)
@@ -380,7 +372,6 @@ class ChordNode(object):
     #RPC Section
     def handle_rpc(self, client_conn, sender_addr, method, arg1, arg2):
         '''Unmarshal the RPC call process it and send the result back to the client'''
-
         result = self.dispatch_rpc(method, arg1, arg2)
         client_conn.sendall(pickle.dumps(result))   
 
@@ -391,7 +382,7 @@ class ChordNode(object):
         if method == 'successor':
             ###self.log(f'HANDLING (successor): {self.successor}')
             return self.successor
-            
+                
         elif hasattr(self, method):
             ###self.log(f'HANDLING ({method})...')
             func = getattr(self, method)
